@@ -1,0 +1,8 @@
+{
+	"id": "filen-obsidian-sync",
+	"name": "Filen Obsidian Sync",
+	"version": "0.0.1",
+	"minAppVersion": "0.15.0",
+	"description": "Obsidian plugin for syncing to Filen",
+	"isDesktopOnly": false
+}

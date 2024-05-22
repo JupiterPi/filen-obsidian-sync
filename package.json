@@ -1,0 +1,22 @@
+{
+	"name": "filen-obsidian-sync",
+	"version": "0.0.1",
+	"description": "Obsidian plugin for syncing to Filen",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"lint": "eslint src/**/* --ext .js,.jsx,.ts,.tsx",
+		"build": "node esbuild.config.mjs production"
+	},
+	"devDependencies": {
+		"@types/node": "^16.11.6",
+		"@typescript-eslint/eslint-plugin": "5.29.0",
+		"@typescript-eslint/parser": "5.29.0",
+		"builtin-modules": "3.3.0",
+		"obsidian": "latest",
+		"tslib": "2.4.0",
+		"typescript": "4.7.4"
+	},
+	"dependencies": {
+		"esbuild": "^0.21.3"
+	}
+}
