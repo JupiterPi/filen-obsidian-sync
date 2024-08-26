@@ -1,6 +1,6 @@
 import { PluginSettingTab, Setting } from "obsidian"
 import FilenSyncPlugin from "./main"
-import { notice } from "./util"
+import { toast } from "./util"
 
 export interface FilenSyncSettings {
 	filenEmail: string | null
@@ -13,7 +13,8 @@ export const defaultSettings: FilenSyncSettings = {
 }
 
 export class Settings {
-	plugin: FilenSyncPlugin
+	private readonly plugin: FilenSyncPlugin
+
 	settings: FilenSyncSettings
 
 	constructor(plugin: FilenSyncPlugin) {
@@ -33,7 +34,7 @@ export class Settings {
 }
 
 class FilenSyncSettingTab extends PluginSettingTab {
-	plugin: FilenSyncPlugin
+	private readonly plugin: FilenSyncPlugin
 
 	constructor(plugin: FilenSyncPlugin) {
 		super(plugin.app, plugin)
@@ -75,9 +76,9 @@ class FilenSyncSettingTab extends PluginSettingTab {
 							this.plugin.settings.settings.filenEmail = this.email
 							this.plugin.settings.settings.filenPassword = this.password
 							await this.plugin.settings.saveSettings()
-							notice(`Logged in as ${this.email}`)
+							toast(`Logged in as ${this.email}`)
 						} catch (e) {
-							notice("Invalid credentials!")
+							toast("Invalid credentials!")
 						}
 						this.display()
 					})
@@ -93,6 +94,7 @@ class FilenSyncSettingTab extends PluginSettingTab {
 						this.plugin.settings.settings.filenEmail = null
 						this.plugin.settings.settings.filenPassword = null
 						await this.plugin.settings.saveSettings()
+						toast("Logged out")
 						this.display()
 					})
 				)

@@ -3,6 +3,6 @@ import { Notice } from "obsidian"
 /**
  * Displays a toast message.
  */
-export function notice(msg: string) {
+export function toast(msg: string) {
 	new Notice(msg, 2000)
 }
