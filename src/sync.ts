@@ -22,8 +22,6 @@ export class Sync {
 
 	private async sync() {
 
-		// aggregate files and modification times
-
 		const files: {
 			path: string,
 			modTimeLocal: number | null,
@@ -55,10 +53,10 @@ export class Sync {
 			}
 		}
 
-		console.log(files)
-
 		// handle files
 		const promises: Promise<void>[] = []
+		let uploads = 0
+		let downloads = 0
 		for (const file of files) {
 			const localFile = this.plugin.app.vault.getFileByPath(file.path)
 			const [parentPath, fileName] = (() => {
@@ -67,8 +65,6 @@ export class Sync {
 			})()
 			if ((file.modTimeLocal ?? 0) > (file.modTimeRemote ?? 0)) {
 
-				console.log(`Upload: ${file.path}`)
-
 				// upload file
 				promises.push((async () => {
 					const content = await this.plugin.app.vault.readBinary(localFile)
@@ -76,10 +72,9 @@ export class Sync {
 					const parentUUID = await this.plugin.filen.fs().mkdir({ path: this.plugin.resolveRemotePath(parentPath) })
 					await this.plugin.filen.cloud().uploadWebFile({ file: uploadFile, parent: parentUUID })
 				})())
+				uploads++
 
 			} else if ((file.modTimeLocal ?? 0) < (file.modTimeRemote ?? 0)) {
-
-				console.log(`Download: ${file.path}`)
 
 				// download file
 				promises.push((async () => {
@@ -94,14 +89,17 @@ export class Sync {
 						await this.plugin.app.vault.createBinary(file.path, content, { mtime: stat.mtimeMs })
 					}
 				})())
-
-			} else {
-
-				console.log(`None: ${file.path}`)
+				downloads++
 
 			}
 		}
-		await Promise.all(promises)
+		if (uploads + downloads > 0) {
+			toast(`Filen Sync: ${uploads} up, ${downloads} down`)
+			await Promise.all(promises)
+			toast("Filen Sync: Done.")
+		} else {
+			toast("Filen Sync: Up to date.")
+		}
 
 	}
 }
