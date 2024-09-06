@@ -5,11 +5,13 @@ import { toast } from "./util"
 export interface FilenSyncSettings {
 	filenEmail: string | null
 	filenPassword: string | null
+	remoteRoot: string
 }
 
 export const defaultSettings: FilenSyncSettings = {
 	filenEmail: null,
-	filenPassword: null
+	filenPassword: null,
+	remoteRoot: "Obsidian Vault",
 }
 
 export class Settings {
@@ -41,15 +43,27 @@ class FilenSyncSettingTab extends PluginSettingTab {
 		this.plugin = plugin
 	}
 
-	private email: string
-	private password: string
-
 	display() {
 		const element = this.containerEl
 		element.empty()
+
+		this.displayHeader(element, "Login")
+		this.displayLoginLogout(element)
+
+		this.displayHeader(element, "Options")
+		this.displayRemoteRoot(element)
+	}
+
+	private displayHeader(element: HTMLElement, header: string) {
 		new Setting(element)
 			.setHeading()
-			.setName("Login")
+			.setName(header)
+	}
+
+	private displayLoginLogout(element: HTMLElement) {
+		let email = ""
+		let password = ""
+
 		if (!this.plugin.filenEmail) {
 			new Setting(element)
 				.setName("Enter your credentials")
@@ -57,26 +71,25 @@ class FilenSyncSettingTab extends PluginSettingTab {
 					.setPlaceholder("mail@example.com")
 					.setValue("")
 					.onChange(async (value) => {
-						this.email = value
+						email = value
 					})
 				)
 				.addText(text => text
 					.setPlaceholder("********")
 					.setValue("")
 					.onChange(async (value) => {
-						this.password = value
+						password = value
 					})
 				)
 				.addButton(button => button
 					.setButtonText("Login")
 					.onClick(async () => {
 						try {
-							await this.plugin.filen.login({ email: this.email, password: this.password })
-							this.plugin.filenEmail = this.email
-							this.plugin.settings.settings.filenEmail = this.email
-							this.plugin.settings.settings.filenPassword = this.password
+							await this.plugin.filen.login({ email, password })
+							this.plugin.settings.settings.filenEmail = email
+							this.plugin.settings.settings.filenPassword = password
 							await this.plugin.settings.saveSettings()
-							toast(`Logged in as ${this.email}`)
+							toast(`Logged in as ${email}`)
 						} catch (e) {
 							toast("Invalid credentials!")
 						}
@@ -90,7 +103,6 @@ class FilenSyncSettingTab extends PluginSettingTab {
 					.setButtonText("Logout")
 					.onClick(async () => {
 						this.plugin.filen.logout()
-						this.plugin.filenEmail = null
 						this.plugin.settings.settings.filenEmail = null
 						this.plugin.settings.settings.filenPassword = null
 						await this.plugin.settings.saveSettings()
@@ -99,5 +111,61 @@ class FilenSyncSettingTab extends PluginSettingTab {
 					})
 				)
 		}
+	}
+
+	private displayRemoteRoot(element: HTMLElement) {
+		let remoteRoot = this.plugin.settings.settings.remoteRoot
+
+		const updateEdited: ((edited: boolean) => void)[] = []
+
+		new Setting(element)
+			.setName("Remote Root")
+			.addText(text => text
+				.setValue(remoteRoot)
+				.setPlaceholder(defaultSettings.remoteRoot)
+				.onChange(async (input) => {
+					remoteRoot = input
+					updateEdited.forEach(update => update(
+						remoteRoot !== this.plugin.settings.settings.remoteRoot
+					))
+				})
+			)
+			.addButton(button => {
+				button
+					.setButtonText("Save")
+					.onClick(async () => {
+						if (remoteRoot === "") remoteRoot = defaultSettings.remoteRoot
+
+						// validate path
+						try {
+							const stat = await this.plugin.filen.fs().stat({ path: remoteRoot })
+							if (!stat.isDirectory()) {
+								toast("Invalid remote root: Is not a directory")
+								this.display()
+								return
+							}
+						} catch (e) {
+							toast("Invalid remote rot: Does not exist")
+							this.display()
+							return
+						}
+
+						this.plugin.settings.settings.remoteRoot = remoteRoot
+						await this.plugin.settings.saveSettings()
+						toast(`Saved remote root: ${remoteRoot}`)
+						this.display()
+					})
+					.setDisabled(true)
+				updateEdited.push(edited => button.setDisabled(!edited))
+			})
+			.addButton(button => {
+				button
+					.setButtonText("Cancel")
+					.onClick(async () => {
+						this.display()
+					})
+					.setDisabled(true)
+				updateEdited.push(edited => button.setDisabled(!edited))
+			})
 	}
 }
