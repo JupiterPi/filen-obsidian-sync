@@ -1,21 +1,19 @@
 import { Plugin } from "obsidian"
 import FilenSDK from "@filen/sdk"
 import { Settings } from "./settings"
-import { toast } from "./util"
-import { Sync } from "./sync"
 import * as pathModule from "path"
+import { initSettingsTab } from "./ui/settingsTab"
+import { initCommands, toast } from "./ui/ui"
 
 export default class FilenSyncPlugin extends Plugin {
 	filen = new FilenSDK()
 
 	settings = new Settings(this)
-	sync = new Sync(this)
 
 	async onload() {
 		console.log("Loaded")
 
 		await this.settings.init()
-		await this.sync.init()
 
 		// if settings contain email, try to log in
 		if (this.settings.settings.filenEmail !== null) {
@@ -33,7 +31,8 @@ export default class FilenSyncPlugin extends Plugin {
 			}
 		}
 
-		this.settings.initSettingsTab()
+		initSettingsTab(this)
+		initCommands(this)
 	}
 
 	async onunload() {

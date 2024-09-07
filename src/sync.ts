@@ -1,8 +1,15 @@
 import FilenSyncPlugin from "./main"
-import { toast } from "./util"
+import { ConfirmDeleteDialog } from "./ui/confirmDeleteDialog"
+import { toast } from "./ui/ui"
 import { TFile } from "obsidian"
-import { CloudItemFile } from "@filen/sdk"
 import { CloudItemBase } from "@filen/sdk/dist/types/cloud"
+import { CloudItemFile } from "@filen/sdk"
+
+type File = {
+	path: string,
+	localFile: TFile | null,
+	remoteFile: CloudItemTreeFile | null,
+}
 
 type CloudItemTreeFile = Omit<{ type: "file" } & CloudItemBase & CloudItemFile, "favorited" | "rm" | "timestamp">
 
@@ -13,25 +20,9 @@ export class Sync {
 		this.plugin = plugin
 	}
 
-	async init() {
-		this.plugin.addCommand({
-			id: "sync",
-			name: "Filen Sync",
-			callback: async () => {
-				await this.sync()
-			},
-			icon: "folder-sync"
-		})
-		this.plugin.addRibbonIcon("folder-sync", "Filen Sync", async () => await this.sync())
-	}
+	public async sync() {
 
-	private async sync() {
-
-		const files: {
-			path: string,
-			localFile: TFile | null,
-			remoteFile: CloudItemTreeFile | null,
-		}[] = []
+		const files: File[] = []
 
 		// aggregate local files
 		const localFiles = this.plugin.app.vault.getFiles()
@@ -64,66 +55,41 @@ export class Sync {
 		let uploads = 0
 		let downloads = 0
 		for (const file of files) {
-			const localFile = this.plugin.app.vault.getFileByPath(file.path)
-			const [parentPath, fileName] = (() => {
-				const lastSlashIndex = file.path.lastIndexOf("/")
-				return [file.path.substring(0, Math.max(lastSlashIndex, 0)), file.path.substring(lastSlashIndex+1)]
-			})()
+			// choose action
 			const action = (() => {
 				const localModificationTime = file.localFile?.stat?.mtime ?? 0
 				const remoteModificationTime = file.remoteFile?.lastModified ?? 0
 				const lastSyncedTime = this.plugin.settings.settings.lastSyncedTimes[file.path]
 
-				if (localModificationTime === 0) return "download"
-				if (remoteModificationTime === 0) return "upload"
-
-				if (lastSyncedTime === undefined) return "conflict:no-last-synced-time"
+				if (localModificationTime === 0) return lastSyncedTime === undefined ? "download" : "delete-remote"
+				if (remoteModificationTime === 0) return lastSyncedTime === undefined ? "upload" : "delete-local"
 
 				if (localModificationTime === lastSyncedTime && remoteModificationTime === lastSyncedTime) return "nothing"
 				else if (localModificationTime > remoteModificationTime && remoteModificationTime === lastSyncedTime) return "upload"
 				else if (localModificationTime < remoteModificationTime && localModificationTime === lastSyncedTime) return "download"
-				else return "conflict:conflicting-times"
+				else return "conflict"
 			})()
-			if (action === "upload") {
 
-				// upload file
-				promises.push((async () => {
-					const content = await this.plugin.app.vault.readBinary(localFile)
-					const uploadFile = new File([content], fileName, { lastModified: file.localFile.stat.mtime })
-					const parentUUID = await this.plugin.filen.fs().mkdir({ path: this.plugin.resolveRemotePath(parentPath) })
-					await this.plugin.filen.cloud().uploadWebFile({ file: uploadFile, parent: parentUUID })
-					this.plugin.settings.settings.lastSyncedTimes[file.path] = file.localFile.stat.mtime
-				})())
+			// perform action
+			if (action === "upload") {
 				console.log(`Uploading ${file.path}`)
 				uploads++
-
+				promises.push(this.uploadFile(file))
 			}
 			if (action === "download") {
-
-				// download file
-				promises.push((async () => {
-					const stat = await this.plugin.filen.fs().stat({ path: this.plugin.resolveRemotePath(file.path) })
-					const content = await this.plugin.filen.fs().readFile({ path: this.plugin.resolveRemotePath(file.path) })
-					if (localFile !== null) {
-						await this.plugin.app.vault.modifyBinary(localFile, content, { mtime: stat.mtimeMs })
-					} else {
-						if (this.plugin.app.vault.getFolderByPath(parentPath) === null) {
-							await this.plugin.app.vault.createFolder(parentPath)
-						}
-						await this.plugin.app.vault.createBinary(file.path, content, { mtime: stat.mtimeMs })
-					}
-					this.plugin.settings.settings.lastSyncedTimes[file.path] = stat.mtimeMs
-				})())
 				console.log(`Downloading ${file.path}`)
 				downloads++
-
+				promises.push(this.downloadFile(file))
 			}
-			if (action === "conflict:no-last-synced-time" || action === "conflict:conflicting-times") {
-
-				// conflict
+			if (action === "delete-local" || action === "delete-remote") {
+				new ConfirmDeleteDialog(this.plugin.app, file.path, action === "delete-local" ? "local" : "remote", () => {
+					console.log(`Deleting ${file.path} ${action === "delete-local" ? "locally" : "on remote"}`)
+					promises.push(action === "delete-local" ? this.deleteLocalFile(file) : this.deleteRemoteFile(file))
+				}).open()
+			}
+			if (action === "conflict") {
 				toast(`Sync conflict on file: ${file.path}`)
 				console.log(`Sync conflict on ${file.path}: ${action}`)
-
 			}
 		}
 		if (uploads + downloads > 0) {
@@ -137,5 +103,45 @@ export class Sync {
 			toast("Filen Sync: Up to date.")
 		}
 
+	}
+
+	private splitPath(path: string): { parentPath: string, fileName: string } {
+		const lastSlashIndex = path.lastIndexOf("/")
+		return {
+			parentPath: path.substring(0, Math.max(lastSlashIndex, 0)),
+			fileName: path.substring(lastSlashIndex+1)
+		}
+	}
+
+	private async uploadFile(file: File): Promise<void>{
+		const { parentPath, fileName } = this.splitPath(file.path)
+		const content = await this.plugin.app.vault.readBinary(file.localFile)
+		const uploadFile = new File([content], fileName, { lastModified: file.localFile.stat.mtime })
+		const parentUUID = await this.plugin.filen.fs().mkdir({ path: this.plugin.resolveRemotePath(parentPath) })
+		await this.plugin.filen.cloud().uploadWebFile({ file: uploadFile, parent: parentUUID })
+		this.plugin.settings.settings.lastSyncedTimes[file.path] = file.localFile.stat.mtime
+	}
+
+	private async downloadFile(file: File): Promise<void> {
+		const { parentPath } = this.splitPath(file.path)
+		const stat = await this.plugin.filen.fs().stat({ path: this.plugin.resolveRemotePath(file.path) })
+		const content = await this.plugin.filen.fs().readFile({ path: this.plugin.resolveRemotePath(file.path) })
+		if (file.localFile !== null) {
+			await this.plugin.app.vault.modifyBinary(file.localFile, content, { mtime: stat.mtimeMs })
+		} else {
+			if (this.plugin.app.vault.getFolderByPath(parentPath) === null) {
+				await this.plugin.app.vault.createFolder(parentPath)
+			}
+			await this.plugin.app.vault.createBinary(file.path, content, { mtime: stat.mtimeMs })
+		}
+		this.plugin.settings.settings.lastSyncedTimes[file.path] = stat.mtimeMs
+	}
+
+	private async deleteLocalFile(file: File): Promise<void> {
+		await this.plugin.app.vault.delete(file.localFile)
+	}
+
+	private async deleteRemoteFile(file: File): Promise<void> {
+		await this.plugin.filen.fs().rm({ path: this.plugin.resolveRemotePath(file.path) })
 	}
 }
