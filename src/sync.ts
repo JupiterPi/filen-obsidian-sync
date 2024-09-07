@@ -64,6 +64,8 @@ export class Sync {
 				if (localModificationTime === 0) return lastSyncedTime === undefined ? "download" : "delete-remote"
 				if (remoteModificationTime === 0) return lastSyncedTime === undefined ? "upload" : "delete-local"
 
+				if (lastSyncedTime === undefined) return "conflict"
+
 				if (localModificationTime === lastSyncedTime && remoteModificationTime === lastSyncedTime) return "nothing"
 				else if (localModificationTime > remoteModificationTime && remoteModificationTime === lastSyncedTime) return "upload"
 				else if (localModificationTime < remoteModificationTime && localModificationTime === lastSyncedTime) return "download"
@@ -115,11 +117,11 @@ export class Sync {
 
 	private async uploadFile(file: File): Promise<void>{
 		const { parentPath, fileName } = this.splitPath(file.path)
-		const content = await this.plugin.app.vault.readBinary(file.localFile)
-		const uploadFile = new File([content], fileName, { lastModified: file.localFile.stat.mtime })
+		const content = await this.plugin.app.vault.readBinary(file.localFile!)
+		const uploadFile = new File([content], fileName, { lastModified: file.localFile!.stat.mtime })
 		const parentUUID = await this.plugin.filen.fs().mkdir({ path: this.plugin.resolveRemotePath(parentPath) })
 		await this.plugin.filen.cloud().uploadWebFile({ file: uploadFile, parent: parentUUID })
-		this.plugin.settings.settings.lastSyncedTimes[file.path] = file.localFile.stat.mtime
+		this.plugin.settings.settings.lastSyncedTimes[file.path] = file.localFile!.stat.mtime
 	}
 
 	private async downloadFile(file: File): Promise<void> {
@@ -138,7 +140,7 @@ export class Sync {
 	}
 
 	private async deleteLocalFile(file: File): Promise<void> {
-		await this.plugin.app.vault.delete(file.localFile)
+		await this.plugin.app.vault.delete(file.localFile!)
 		delete this.plugin.settings.settings.lastSyncedTimes[file.path]
 	}
 

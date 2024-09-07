@@ -3,15 +3,14 @@ import { Notice } from "obsidian"
 import { Sync } from "../sync"
 
 export function initCommands(plugin: FilenSyncPlugin) {
+	const sync = async () => await new Sync(plugin).sync()
 	plugin.addCommand({
 		id: "sync",
 		name: "Filen Sync",
-		callback: async () => {
-			await new Sync(plugin).sync()
-		},
+		callback: sync,
 		icon: "folder-sync"
 	})
-	plugin.addRibbonIcon("folder-sync", "Filen Sync", async () => await this.sync())
+	plugin.addRibbonIcon("folder-sync", "Filen Sync", sync)
 }
 
 export function toast(msg: string) {

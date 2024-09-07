@@ -49,5 +49,7 @@ export default [{
         quotes: ["error", "double"],
         "no-mixed-spaces-and-tabs": 0,
         "no-duplicate-imports": "error",
+
+        "@typescript-eslint/no-non-null-assertion": "off",
     },
 }];
