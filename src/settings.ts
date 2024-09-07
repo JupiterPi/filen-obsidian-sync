@@ -6,12 +6,14 @@ export interface FilenSyncSettings {
 	filenEmail: string | null
 	filenPassword: string | null
 	remoteRoot: string
+	lastSyncedTimes: Record<string, number>
 }
 
 export const defaultSettings: FilenSyncSettings = {
 	filenEmail: null,
 	filenPassword: null,
 	remoteRoot: "Obsidian Vault",
+	lastSyncedTimes: {},
 }
 
 export class Settings {
