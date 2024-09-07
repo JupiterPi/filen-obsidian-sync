@@ -139,9 +139,11 @@ export class Sync {
 
 	private async deleteLocalFile(file: File): Promise<void> {
 		await this.plugin.app.vault.delete(file.localFile)
+		delete this.plugin.settings.settings.lastSyncedTimes[file.path]
 	}
 
 	private async deleteRemoteFile(file: File): Promise<void> {
 		await this.plugin.filen.fs().rm({ path: this.plugin.resolveRemotePath(file.path) })
+		delete this.plugin.settings.settings.lastSyncedTimes[file.path]
 	}
 }
