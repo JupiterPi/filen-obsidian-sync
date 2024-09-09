@@ -17,7 +17,7 @@ export const defaultSettings: FilenSyncSettings = {
 export class Settings {
 	private readonly plugin: FilenSyncPlugin
 
-	settings: FilenSyncSettings
+	settings: FilenSyncSettings = defaultSettings
 
 	constructor(plugin: FilenSyncPlugin) {
 		this.plugin = plugin

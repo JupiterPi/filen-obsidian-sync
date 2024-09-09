@@ -1,15 +1,14 @@
 import { App, Modal } from "obsidian"
 
 export class ConfirmDeleteDialog extends Modal {
-	private readonly path: string
-	private readonly location: "local" | "remote"
-	private readonly callback: () => void
-
-	constructor(app: App, path: string, location: "local" | "remote", callback: () => void) {
+	constructor(
+		app: App,
+		private readonly path: string,
+		private readonly location: "local" | "remote",
+		private readonly confirmCallback: () => Promise<void>,
+		private readonly onCloseCallback: () => void,
+	) {
 		super(app)
-		this.path = path
-		this.location = location
-		this.callback = callback
 	}
 
 	onOpen() {
@@ -37,15 +36,13 @@ export class ConfirmDeleteDialog extends Modal {
 			el.createEl("button", {}, el => {
 				el.setText("Delete")
 				el.addClass("mod-warning")
-				el.addEventListener("click", () => {
-					this.close()
-					this.callback()
-				})
+				el.addEventListener("click", () => this.confirmCallback().then(() => this.close()))
 			})
 		})
 	}
 
 	onClose() {
+		this.onCloseCallback()
 		this.contentEl.empty()
 	}
 }

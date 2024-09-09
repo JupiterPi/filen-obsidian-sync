@@ -4,6 +4,7 @@ import { toast } from "./ui/ui"
 import { TFile } from "obsidian"
 import { CloudItemBase } from "@filen/sdk/dist/types/cloud"
 import { CloudItemFile } from "@filen/sdk"
+import { ConflictResolutionDialog } from "./ui/conflictResolutionDialog"
 
 type File = {
 	path: string,
@@ -55,12 +56,12 @@ export class Sync {
 		let uploads = 0
 		let downloads = 0
 		for (const file of files) {
+			const localModificationTime = file.localFile?.stat?.mtime ?? 0
+			const remoteModificationTime = file.remoteFile?.lastModified ?? 0
+			const lastSyncedTime = this.plugin.settings.settings.lastSyncedTimes[file.path]
+
 			// choose action
 			const action = (() => {
-				const localModificationTime = file.localFile?.stat?.mtime ?? 0
-				const remoteModificationTime = file.remoteFile?.lastModified ?? 0
-				const lastSyncedTime = this.plugin.settings.settings.lastSyncedTimes[file.path]
-
 				if (localModificationTime === 0) return lastSyncedTime === undefined ? "download" : "delete-remote"
 				if (remoteModificationTime === 0) return lastSyncedTime === undefined ? "upload" : "delete-local"
 
@@ -84,14 +85,46 @@ export class Sync {
 				promises.push(this.downloadFile(file))
 			}
 			if (action === "delete-local" || action === "delete-remote") {
-				new ConfirmDeleteDialog(this.plugin.app, file.path, action === "delete-local" ? "local" : "remote", () => {
-					console.log(`Deleting ${file.path} ${action === "delete-local" ? "locally" : "on remote"}`)
-					promises.push(action === "delete-local" ? this.deleteLocalFile(file) : this.deleteRemoteFile(file))
-				}).open()
+				promises.push(new Promise(resolve => {
+					let confirmed = false
+					const confirm = async () => {
+						console.log(`Deleting ${file.path} ${action === "delete-local" ? "locally" : "on remote"}`)
+						if (action === "delete-local") await this.deleteLocalFile(file); else await this.deleteRemoteFile(file)
+						confirmed = true
+					}
+					const onClose = () => {
+						if (!confirmed) console.log(`Skipped ${file.path} (supposed to delete ${action === "delete-local" ? "locally" : "on remote"})`)
+						resolve()
+					}
+					new ConfirmDeleteDialog(this.plugin.app, file.path, action === "delete-local" ? "local" : "remote", confirm, onClose).open()
+				}))
 			}
 			if (action === "conflict") {
-				toast(`Sync conflict on file: ${file.path}`)
-				console.log(`Sync conflict on ${file.path}: ${action}`)
+				promises.push(new Promise(async (resolve) => {
+					const localVersion = await this.readLocalFile(file)
+					const remoteVersion = await this.readRemoteFile(file)
+					let actionDone = false
+					const acceptLocal = async () => {
+						console.log(`Conflict resolved for ${file.path} by accepting local version`)
+						await this.overwriteFile(file, Buffer.from(localVersion), localModificationTime, false, true)
+						actionDone = true
+					}
+					const acceptRemote = async () => {
+						console.log(`Conflict resolved for ${file.path} by accepting remote version`)
+						await this.overwriteFile(file, Buffer.from(remoteVersion), remoteModificationTime, true, false)
+						actionDone = true
+					}
+					const resolveManually = async (resolution: string) => {
+						console.log(`Conflict resolved for ${file.path} by manual conflict resolution`)
+						await this.overwriteFile(file, Buffer.from(resolution), Date.now(), true, true)
+						actionDone = true
+					}
+					const onClose = () => {
+						if (!actionDone) console.log(`Skipped ${file.path} (supposed to resolve conflict)`)
+						resolve()
+					}
+					new ConflictResolutionDialog(this.plugin.app, file.path, localVersion, remoteVersion, acceptLocal, acceptRemote, resolveManually, onClose).open()
+				}))
 			}
 		}
 		if (uploads + downloads > 0) {
@@ -131,7 +164,7 @@ export class Sync {
 		if (file.localFile !== null) {
 			await this.plugin.app.vault.modifyBinary(file.localFile, content, { mtime: stat.mtimeMs })
 		} else {
-			if (this.plugin.app.vault.getFolderByPath(parentPath) === null) {
+			if (parentPath.length > 0 && this.plugin.app.vault.getFolderByPath(parentPath) === null) {
 				await this.plugin.app.vault.createFolder(parentPath)
 			}
 			await this.plugin.app.vault.createBinary(file.path, content, { mtime: stat.mtimeMs })
@@ -142,10 +175,42 @@ export class Sync {
 	private async deleteLocalFile(file: File): Promise<void> {
 		await this.plugin.app.vault.delete(file.localFile!)
 		delete this.plugin.settings.settings.lastSyncedTimes[file.path]
+		await this.plugin.settings.saveSettings()
 	}
 
 	private async deleteRemoteFile(file: File): Promise<void> {
 		await this.plugin.filen.fs().rm({ path: this.plugin.resolveRemotePath(file.path) })
 		delete this.plugin.settings.settings.lastSyncedTimes[file.path]
+		await this.plugin.settings.saveSettings()
+	}
+
+	private async readLocalFile(file: File): Promise<string> {
+		return await this.plugin.app.vault.read(file.localFile!)
+	}
+
+	private async readRemoteFile(file: File): Promise<string> {
+		return (await this.plugin.filen.fs().readFile({ path: this.plugin.resolveRemotePath(file.path) })).toString()
+	}
+
+	private async overwriteFile(file: File, content: ArrayBuffer, modificationTime: number, writeLocal: boolean, writeRemote: boolean): Promise<void> {
+		const promises: Promise<void>[] = []
+
+		if (writeLocal) {
+			promises.push(this.plugin.app.vault.modifyBinary(file.localFile!, content, { mtime: modificationTime }))
+		}
+		if (writeRemote) {
+			const { parentPath, fileName } = this.splitPath(file.path)
+			const uploadFile = new File([content], fileName, { lastModified: modificationTime })
+			promises.push((async () => {
+				const parentUUID = await this.plugin.filen.fs().pathToItemUUID({ path: this.plugin.resolveRemotePath(parentPath), type: "directory" })
+				await this.plugin.filen.cloud().uploadWebFile({ file: uploadFile, parent: parentUUID! })
+			})())
+		}
+		if (this.plugin.settings.settings.lastSyncedTimes[file.path] !== modificationTime) {
+			this.plugin.settings.settings.lastSyncedTimes[file.path] = modificationTime
+			promises.push(this.plugin.settings.saveSettings())
+		}
+
+		await Promise.all(promises)
 	}
 }

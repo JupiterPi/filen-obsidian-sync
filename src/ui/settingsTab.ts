@@ -36,7 +36,7 @@ export class FilenSyncSettingTab extends PluginSettingTab {
 		let email = ""
 		let password = ""
 
-		if (!this.plugin.filenEmail) {
+		if (!this.plugin.settings.settings.filenEmail) {
 			new Setting(element)
 				.setName("Enter your credentials")
 				.addText(text => text
@@ -70,7 +70,7 @@ export class FilenSyncSettingTab extends PluginSettingTab {
 				)
 		} else {
 			new Setting(element)
-				.setName(`Logged in as ${this.plugin.filenEmail}`)
+				.setName(`Logged in as ${this.plugin.settings.settings.filenEmail}`)
 				.addButton(button => button
 					.setButtonText("Logout")
 					.onClick(async () => {

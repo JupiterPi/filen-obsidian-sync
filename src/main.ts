@@ -20,7 +20,7 @@ export default class FilenSyncPlugin extends Plugin {
 			try {
 				await this.filen.login({
 					email: this.settings.settings.filenEmail,
-					password: this.settings.settings.filenPassword
+					password: this.settings.settings.filenPassword!
 				})
 				console.log(`Logged in as ${this.settings.settings.filenEmail} (saved)`)
 			} catch (e) {
@@ -37,10 +37,6 @@ export default class FilenSyncPlugin extends Plugin {
 
 	async onunload() {
 		console.log("Unloaded")
-	}
-
-	public get filenEmail() {
-		return this.settings.settings.filenEmail
 	}
 
 	public resolveRemotePath(path: string) {
